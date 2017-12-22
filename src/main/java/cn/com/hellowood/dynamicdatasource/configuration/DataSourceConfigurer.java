@@ -30,7 +30,7 @@ public class DataSourceConfigurer {
      */
     @Bean("master")
     @Primary
-    @ConfigurationProperties(prefix = "application.server.db.master")
+    @ConfigurationProperties(prefix = "spring.datasource.druid.master")
     public DataSource master() {
         return DataSourceBuilder.create().build();
     }
@@ -41,7 +41,7 @@ public class DataSourceConfigurer {
      * @return data source
      */
     @Bean("slave")
-    @ConfigurationProperties(prefix = "application.server.db.slave")
+    @ConfigurationProperties(prefix = "spring.datasource.druid.slave")
     public DataSource slave() {
         return DataSourceBuilder.create().build();
     }
