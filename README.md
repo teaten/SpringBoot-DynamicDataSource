@@ -1,6 +1,6 @@
 # Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离
 
-> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev)
+> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/druid](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/druid)
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
 
@@ -35,23 +35,73 @@
 - application.properties
 
 ```properties
-# Master datasource config
-application.server.db.master.driver-class-name=com.mysql.jdbc.Driver
-application.server.db.master.url=jdbc:mysql://localhost/product_master?useSSL=false
-application.server.db.master.port=3306
-application.server.db.master.username=root
-application.server.db.master.password=123456
+spring.datasource.druid.master.name=master
+spring.datasource.druid.master.driver-class-name=com.mysql.jdbc.Driver
+spring.datasource.druid.master.url=jdbc:mysql://localhost/product_master?useSSL=false
+spring.datasource.druid.master.port=3306
+spring.datasource.druid.master.username=root
+spring.datasource.druid.master.password=123456
 
-# Slave datasource config
-application.server.db.slave.driver-class-name=com.mysql.jdbc.Driver
-application.server.db.slave.url=jdbc:mysql://localhost/product_slave?useSSL=false
-application.server.db.slave.port=3306
-application.server.db.slave.username=root
-application.server.db.slave.password=123456
+spring.datasource.druid.slave.name=slave
+spring.datasource.druid.slave.driver-class-name=com.mysql.jdbc.Driver
+spring.datasource.druid.slave.url=jdbc:mysql://localhost/product_slave?useSSL=false
+spring.datasource.druid.slave.port=3306
+spring.datasource.druid.slave.username=root
+spring.datasource.druid.slave.password=123456
 
-# MyBatis config
+# Druid dataSource config
+spring.datasource.type=com.alibaba.druid.pool.DruidDataSource
+spring.datasource.druid.initial-size=5
+spring.datasource.druid.max-active=20
+spring.datasource.druid.min-idle=5
+spring.datasource.druid.max-wait=60000
+spring.datasource.druid.pool-prepared-statements=true
+spring.datasource.druid.max-pool-prepared-statement-per-connection-size=20
+spring.datasource.druid.max-open-prepared-statements=20
+spring.datasource.druid.validation-query=SELECT 1
+spring.datasource.druid.validation-query-timeout=30000
+spring.datasource.druid.test-on-borrow=false
+spring.datasource.druid.test-on-return=false
+spring.datasource.druid.test-while-idle=false
+#spring.datasource.druid.time-between-eviction-runs-millis=
+#spring.datasource.druid.min-evictable-idle-time-millis=
+#spring.datasource.druid.max-evictable-idle-time-millis=10000
+
+# Druid stat filter config
+spring.datasource.druid.filters=stat,wall,log4j,slf4j
+spring.datasource.druid.web-stat-filter.enabled=true
+spring.datasource.druid.web-stat-filter.url-pattern=/druid/*
+#spring.datasource.druid.web-stat-filter.exclusions=
+spring.datasource.druid.web-stat-filter.session-stat-enable=true
+spring.datasource.druid.web-stat-filter.session-stat-max-count=10
+#spring.datasource.druid.web-stat-filter.principal-session-name=
+#spring.datasource.druid.web-stat-filter.principal-cookie-name=
+spring.datasource.druid.web-stat-filter.profile-enable=true
+spring.datasource.druid.filter.stat.db-type=mysql
+spring.datasource.druid.filter.stat.log-slow-sql=true
+spring.datasource.druid.filter.stat.slow-sql-millis=1000
+spring.datasource.druid.filter.stat.merge-sql=true
+spring.datasource.druid.filter.wall.enabled=true
+spring.datasource.druid.filter.wall.db-type=mysql
+spring.datasource.druid.filter.wall.config.delete-allow=true
+spring.datasource.druid.filter.wall.config.drop-table-allow=false
+
+# Druid manage page config
+spring.datasource.druid.stat-view-servlet.enabled=true
+spring.datasource.druid.stat-view-servlet.url-pattern=/druid/*
+spring.datasource.druid.stat-view-servlet.reset-enable=true
+spring.datasource.druid.stat-view-servlet.login-username=admin
+spring.datasource.druid.stat-view-servlet.login-password=admin
+#spring.datasource.druid.stat-view-servlet.allow=
+#spring.datasource.druid.stat-view-servlet.deny=
+
+# Druid AOP config
+spring.datasource.druid.aop-patterns=cn.com.hellowood.dynamicdatasource.service.*
+spring.aop.proxy-target-class=true
+
 mybatis.type-aliases-package=cn.com.hellowood.dynamicdatasource.mapper
 mybatis.mapper-locations=mappers/**Mapper.xml
+
 ```
 
 ## 配置数据源
@@ -88,8 +138,8 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
 ```java
 package cn.com.hellowood.dynamicdatasource.configuration;
 
+import com.alibaba.druid.spring.boot.autoconfigure.DruidDataSourceBuilder;
 import org.mybatis.spring.SqlSessionFactoryBean;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceBuilder;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -112,9 +162,9 @@ public class DataSourceConfigurer {
      */
     @Bean("master")
     @Primary
-    @ConfigurationProperties(prefix = "application.server.db.master")
+    @ConfigurationProperties(prefix = "spring.datasource.druid.master")
     public DataSource master() {
-        return DataSourceBuilder.create().build();
+        return DruidDataSourceBuilder.create().build();
     }
 
     /**
@@ -123,9 +173,9 @@ public class DataSourceConfigurer {
      * @return data source
      */
     @Bean("slave")
-    @ConfigurationProperties(prefix = "application.server.db.slave")
+    @ConfigurationProperties(prefix = "spring.datasource.druid.slave")
     public DataSource slave() {
-        return DataSourceBuilder.create().build();
+        return DruidDataSourceBuilder.create().build();
     }
 
     /**
