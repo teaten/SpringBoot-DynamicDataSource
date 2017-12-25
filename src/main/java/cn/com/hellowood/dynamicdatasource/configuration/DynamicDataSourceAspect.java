@@ -4,6 +4,7 @@ import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.After;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
+import org.aspectj.lang.annotation.Pointcut;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.Order;
@@ -17,23 +18,26 @@ import org.springframework.stereotype.Component;
  * @email hellowoodes@gmail.com
  */
 @Aspect
-@Order(-1) // To ensure execute before @Transactional
+@Order(-100) // To ensure execute before @Transactional
 @Component
 public class DynamicDataSourceAspect {
     private static final Logger logger = LoggerFactory.getLogger(DynamicDataSourceAspect.class);
+
+    private final String QUERY_PREFIX = "select";
+
+    @Pointcut("execution( * cn.com.hellowood.dynamicdatasource.mapper.*.*(..))")
+    public void daoAspect() {
+    }
 
     /**
      * Switch DataSource
      *
      * @param point
-     * @param targetDataSource
      */
-    @Before("@annotation(targetDataSource))")
-    public void switchDataSource(JoinPoint point, TargetDataSource targetDataSource) {
-        if (!DynamicDataSourceContextHolder.containDataSourceKey(targetDataSource.value())) {
-            logger.error("DataSource [{}] doesn't exist, use default DataSource [{}]", targetDataSource.value());
-        } else {
-            DynamicDataSourceContextHolder.setDataSourceKey(targetDataSource.value());
+    @Before("daoAspect()")
+    public void switchDataSource(JoinPoint point) {
+        if (point.getSignature().getName().startsWith(QUERY_PREFIX)) {
+            DynamicDataSourceContextHolder.setDataSourceKey("slave");
             logger.info("Switch DataSource to [{}] in Method [{}]",
                     DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
         }
@@ -43,10 +47,9 @@ public class DynamicDataSourceAspect {
      * Restore DataSource
      *
      * @param point
-     * @param targetDataSource
      */
-    @After("@annotation(targetDataSource))")
-    public void restoreDataSource(JoinPoint point, TargetDataSource targetDataSource) {
+    @After("daoAspect())")
+    public void restoreDataSource(JoinPoint point) {
         DynamicDataSourceContextHolder.clearDataSourceKey();
         logger.info("Restore DataSource to [{}] in Method [{}]",
                 DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());

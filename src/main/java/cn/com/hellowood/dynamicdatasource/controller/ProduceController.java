@@ -1,6 +1,5 @@
 package cn.com.hellowood.dynamicdatasource.controller;
 
-import cn.com.hellowood.dynamicdatasource.configuration.TargetDataSource;
 import cn.com.hellowood.dynamicdatasource.modal.Product;
 import cn.com.hellowood.dynamicdatasource.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,21 +40,8 @@ public class ProduceController {
      * @return
      * @throws Exception
      */
-    @GetMapping("/master")
-    @TargetDataSource("master")
-    public List<Product> getAllMasterProduct() {
-        return productService.selectAll();
-    }
-
-    /**
-     * Get all product
-     *
-     * @return
-     * @throws Exception
-     */
-    @GetMapping("/slave")
-    @TargetDataSource("slave")
-    public List<Product> getAllSlaveProduct() {
+    @GetMapping
+    public List<Product> getAllProduct() {
         return productService.selectAll();
     }
 
