@@ -1,6 +1,7 @@
 # Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离 —— 通过 DAO 层方法名切换数据源
 
 > 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao)
+
 > 常见错误：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md](https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md)
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
@@ -332,12 +333,11 @@ public class ProduceController {
     @Autowired
     private ProductService productService;
 
-    /**
-     * Get all product
-     *
-     * @return
-     * @throws Exception
-     */
+    @GetMapping("/{id}")
+    public Product getProduct(@PathVariable("id") Long productId) throws Exception {
+        return productService.select(productId);
+    }
+
     @GetMapping
     public List<Product> getAllProduct() throws Exception {
         return productService.getAllProduct();
@@ -346,8 +346,8 @@ public class ProduceController {
 }
 
 ```
+
 - ProductService.java
-- ProductDao.java
 
 ```java
 package cn.com.hellowood.dynamicdatasource.mapper;
@@ -366,6 +366,7 @@ public interface ProductDao {
 }
 
 ```
+
 - ProductMapper.xml
 
 > 启动项目，此时访问 `/product/1` 会返回 `product_master` 数据库中 `product` 表中的所有数据，
@@ -378,4 +379,4 @@ public interface ProductDao {
 
 > 在该应用中因为使用了 DAO 层的切面切换数据源，所以不能注入 `DataSourceTransactionManager` 的 Bean ，
 否则会在 Service 层开启事务，导致数据库操作执行完之后才会执行切面，从而无法切换数据源，同时事务不会生效，
-如果切面切向 Service 层，则可以注入 `DataSourceTransactionManager`
+如果切面切向 Service 层，则可以注入 `DataSourceTransactionManager`, 事务正常生效
