@@ -13,16 +13,19 @@ import org.springframework.stereotype.Component;
  * Multiple DataSource Aspect
  *
  * @author HelloWood
- * @date 2017-08-15 11:37
- * @email hellowoodes@gmail.com
+ * @date 2017 -08-15 11:37
+ * @email hellowoodes @gmail.com
  */
 @Aspect
 @Component
 public class DynamicDataSourceAspect {
     private static final Logger logger = LoggerFactory.getLogger(DynamicDataSourceAspect.class);
 
-    private final String QUERY_PREFIX = "select";
+    private final String[] QUERY_PREFIX = {"select"};
 
+    /**
+     * Dao aspect.
+     */
     @Pointcut("execution( * cn.com.hellowood.dynamicdatasource.mapper.*.*(..))")
     public void daoAspect() {
     }
@@ -30,11 +33,12 @@ public class DynamicDataSourceAspect {
     /**
      * Switch DataSource
      *
-     * @param point
+     * @param point the point
      */
     @Before("daoAspect()")
     public void switchDataSource(JoinPoint point) {
-        if (point.getSignature().getName().startsWith(QUERY_PREFIX)) {
+        Boolean isQueryMethod = isQueryMethod(point.getSignature().getName());
+        if (isQueryMethod) {
             DynamicDataSourceContextHolder.setDataSourceKey("slave");
             logger.info("Switch DataSource to [{}] in Method [{}]",
                     DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
@@ -44,13 +48,29 @@ public class DynamicDataSourceAspect {
     /**
      * Restore DataSource
      *
-     * @param point
+     * @param point the point
      */
     @After("daoAspect())")
     public void restoreDataSource(JoinPoint point) {
         DynamicDataSourceContextHolder.clearDataSourceKey();
         logger.info("Restore DataSource to [{}] in Method [{}]",
                 DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
+    }
+
+
+    /**
+     * Judge if method start with query prefix
+     *
+     * @param methodName
+     * @return
+     */
+    private Boolean isQueryMethod(String methodName) {
+        for (String prefix : QUERY_PREFIX) {
+            if (methodName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }
