@@ -24,5 +24,5 @@ public interface ProductDao {
 
     Integer delete(long productId);
 
-    List<Product> selectAll();
+    List<Product> getAllProduct();
 }

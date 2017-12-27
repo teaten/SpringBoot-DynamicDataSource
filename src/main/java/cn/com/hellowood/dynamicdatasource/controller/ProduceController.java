@@ -42,7 +42,7 @@ public class ProduceController {
      */
     @GetMapping
     public List<Product> getAllProduct() {
-        return productService.selectAll();
+        return productService.getAllProduct();
     }
 
     /**

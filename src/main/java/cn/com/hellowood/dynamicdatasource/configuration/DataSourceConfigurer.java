@@ -6,8 +6,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
 import java.util.HashMap;
@@ -86,17 +84,6 @@ public class DataSourceConfigurer {
         // put all datasource into SqlSessionFactoryBean, then will autoconfig SqlSessionFactory
         sqlSessionFactoryBean.setDataSource(dynamicDataSource());
         return sqlSessionFactoryBean;
-    }
-
-    /**
-     * Transaction manager platform transaction manager.
-     * Here should be config if using Transaction
-     *
-     * @return the platform transaction manager
-     */
-    @Bean
-    public PlatformTransactionManager transactionManager() {
-        return new DataSourceTransactionManager(dynamicDataSource());
     }
 }
 

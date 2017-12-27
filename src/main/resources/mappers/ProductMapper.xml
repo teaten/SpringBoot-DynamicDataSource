@@ -15,7 +15,7 @@
         LIMIT 1
     </select>
 
-    <select id="selectAll" resultMap="baseResultMap">
+    <select id="getAllProduct" resultMap="baseResultMap">
         SELECT *
         FROM product
     </select>
