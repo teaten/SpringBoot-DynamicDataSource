@@ -1,17 +1,20 @@
-# Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离
+# Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离 —— 通过 DAO 层方法名切换数据源
 
-> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev)
+> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao)
+> 常见错误：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md](https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md)
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
 
 > 在这个项目中使用注解方式声明要使用的数据源，通过 AOP 查找注解，从而实现数据源的动态切换；该项目为 Product
 实现其 REST API 的 CRUD为例，使用最小化的配置实现动态数据源切换
 
-> 动态切换数据源依赖 `configuration` 包下的5个类来实现，分别是：
+> 需要注意的是，考虑到在一个 Service 中同时会有读和写的操作，所以本应用是通过 AOP 切 DAO 层实现数据源切换，但是当切向 DAO 层后不能开启
+事务，否则无法在 DAO 层切换数据源；如果切面切向 Service 层，不会和事务冲突
+
+> 动态切换数据源依赖 `configuration` 包下的4个类来实现，分别是：
 > - DataSourceRoutingDataSource.java
 > - DataSourceConfigurer.java
 > - DynamicDataSourceContextHolder.java
-> - TargetDataSource.java
 > - DynamicDataSourceAspect.java
 
 ---------------------
@@ -22,12 +25,21 @@
 - 在 `product_master` 和 `product_slave` 中分别创建表 `product`，并插入不同数据
 
 ```sql
-    CREATE TABLE product(
+    CREATE TABLE product_master.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
       price DOUBLE(10,2) NOT NULL DEFAULT 0
     );
     
+    INSERT INTO product_master.product (name, price) VALUES('master', '1');
+    
+    CREATE TABLE product_slave.product(
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(50) NOT NULL,
+      price DOUBLE(10,2) NOT NULL DEFAULT 0
+    );
+    
+    INSERT INTO product_slave.product (name, price) VALUES('slave', '1');
 ```
 
 ## 配置数据源
@@ -166,16 +178,6 @@ public class DataSourceConfigurer {
         return sqlSessionFactoryBean;
     }
     
-    
-    /**
-     * 配置事务管理，如果使用到事务需要注入该 Bean，否则事务不会生效
-     * 在需要的地方加上 @Transactional 注解即可
-     * @return the platform transaction manager
-     */
-    @Bean
-    public PlatformTransactionManager transactionManager() {
-        return new DataSourceTransactionManager(dynamicDataSource());
-    }
 }
 
 ```
@@ -250,78 +252,57 @@ public class DynamicDataSourceContextHolder {
 
 ```
 
-- TargetDataSource.java
-
-> 数据源注解，用于设置数据源的 key，指定使用哪个数据源
-
-```java
-package cn.com.hellowood.dynamicdatasource.configuration;
-
-import java.lang.annotation.*;
-
-@Target({ElementType.METHOD, ElementType.TYPE})
-@Retention(RetentionPolicy.RUNTIME)
-@Documented
-public @interface TargetDataSource {
-    String value();
-}
-
-```
-
 - DynamicDataSourceAspect.java
 
-> 动态数据源切换的切面，切 `@TargetDataSource` 注解，实现数据源切换
+> 动态数据源切换的切面，切 DAO 层，通过 DAO 层方法名判断使用哪个数据源，实现数据源切换
 
 ```java
-
 package cn.com.hellowood.dynamicdatasource.configuration;
 
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.After;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
+import org.aspectj.lang.annotation.Pointcut;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Aspect
-// 该切面应当先于 @Transactional 执行
-@Order(-1) 
 @Component
 public class DynamicDataSourceAspect {
     private static final Logger logger = LoggerFactory.getLogger(DynamicDataSourceAspect.class);
 
-    /**
-     * Switch DataSource
-     *
-     * @param point
-     * @param targetDataSource
-     */
-    @Before("@annotation(targetDataSource))")
-    public void switchDataSource(JoinPoint point, TargetDataSource targetDataSource) {
-        if (!DynamicDataSourceContextHolder.containDataSourceKey(targetDataSource.value())) {
-            logger.error("DataSource [{}] doesn't exist, use default DataSource [{}]", targetDataSource.value());
-        } else {
-            // 切换数据源
-            DynamicDataSourceContextHolder.setDataSourceKey(targetDataSource.value());
+    private final String[] QUERY_PREFIX = {"select"};
+
+    @Pointcut("execution( * cn.com.hellowood.dynamicdatasource.mapper.*.*(..))")
+    public void daoAspect() {
+    }
+
+    @Before("daoAspect()")
+    public void switchDataSource(JoinPoint point) {
+        Boolean isQueryMethod = isQueryMethod(point.getSignature().getName());
+        if (isQueryMethod) {
+            DynamicDataSourceContextHolder.setDataSourceKey("slave");
             logger.info("Switch DataSource to [{}] in Method [{}]",
                     DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
         }
     }
 
-    /**
-     * Restore DataSource
-     *
-     * @param point
-     * @param targetDataSource
-     */
-    @After("@annotation(targetDataSource))")
-    public void restoreDataSource(JoinPoint point, TargetDataSource targetDataSource) {
-        // 将数据源置为默认数据源
+    @After("daoAspect())")
+    public void restoreDataSource(JoinPoint point) {
         DynamicDataSourceContextHolder.clearDataSourceKey();
         logger.info("Restore DataSource to [{}] in Method [{}]",
                 DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
+    }
+
+    private Boolean isQueryMethod(String methodName) {
+        for (String prefix : QUERY_PREFIX) {
+            if (methodName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }
@@ -357,39 +338,44 @@ public class ProduceController {
      * @return
      * @throws Exception
      */
-    @GetMapping("/master")
-    @TargetDataSource("master")
-    public List<Product> getAllMasterProduct() throws Exception {
-        return productService.selectAll();
+    @GetMapping
+    public List<Product> getAllProduct() throws Exception {
+        return productService.getAllProduct();
     }
 
-    /**
-     * Get all product
-     *
-     * @return
-     * @throws Exception
-     */
-    @GetMapping("/slave")
-    @TargetDataSource("slave")
-    public List<Product> getAllSlaveProduct() throws Exception {
-        return productService.selectAll();
-    }
 }
 
 ```
 - ProductService.java
 - ProductDao.java
+
+```java
+package cn.com.hellowood.dynamicdatasource.mapper;
+
+import cn.com.hellowood.dynamicdatasource.modal.Product;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+
+@Mapper
+public interface ProductDao {
+    Product select(@Param("id") long id);
+
+    List<Product> getAllProduct();
+}
+
+```
 - ProductMapper.xml
 
-> 启动项目，此时访问 `/product/master` 会返回 `product_master` 数据库中 `product` 表中的所有数据，
-访问 `/product/slave` 会返回 `product_slave` 数据库中 `product` 表中的数据，同时也可以在看到切换
+> 启动项目，此时访问 `/product/1` 会返回 `product_master` 数据库中 `product` 表中的所有数据，
+访问 `/product` 会返回 `product_slave` 数据库中 `product` 表中的数据，同时也可以在看到切换
 数据源的 log，说明动态切换数据源是有效的
 
 ---------------
 
-> 在该项目中，`@TargetDataSource` 注解可用用于 `Controller` 和 `Service` 类中，用于持久层接口时无效
+## 注意
 
-> 在实际项目中如果使用注解的方式挨个标记并不是合理的方式，而且局限性太大，一个方法中可能既有查询又有写入，
-所以无法很好的实现读写分离；更好的方式是通过 AOP 切持久层接口，通过接口的方法名来判断应当使用哪种数据源，
-不过该方式要求使用统一的命名方式
-
+> 在该应用中因为使用了 DAO 层的切面切换数据源，所以不能注入 `DataSourceTransactionManager` 的 Bean ，
+否则会在 Service 层开启事务，导致数据库操作执行完之后才会执行切面，从而无法切换数据源，同时事务不会生效，
+如果切面切向 Service 层，则可以注入 `DataSourceTransactionManager`

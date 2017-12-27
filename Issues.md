@@ -1,6 +1,6 @@
 # 在使用 Spring Boot 和 MyBatis 动态切换数据源时遇到的问题以及解决方法
 
-> 相关项目地址:[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/dev)
+> 相关项目地址:[https://github.com/helloworlde/SpringBoot-DynamicDataSource](https://github.com/helloworlde/SpringBoot-DynamicDataSource)
 
 ## 1. org.apache.ibatis.binding.BindingException: Invalid bound statement (not found)
 
@@ -35,8 +35,9 @@
 得到的 `Bean`，而不是通过 `new AbstractRoutingDataSource` 的子类实现的 `Bean`，在本项目中可以是 `master()`
 或 `slave()` 得到的 `DataSource`，不能是 `dynamicDataSource()` 得到的 `DataSource`
 
-## 3. 动态切换数据源无效
+## 3. 通过注解方式动态切换数据源无效
 
+- 请确认注解没有放到 DAO 层方法上
 - 请确认以下 `Bean` 正确配置：
 
 ```java
@@ -81,5 +82,17 @@
     
 ```
 
+## 5. 通过 AOP 判断 DAO 层方法名时切换数据源无效
+
+> 当切面指向了 DAO 层后无论如何设置切面的顺序，都无法在执行查询之前切换数据源，但是切面改为 Service 层后可以正常工作
+
+- 解决方法: 不要注入 `DataSourceTransactionManager` Bean , 删除以下代码，此时 `@Transactional` 注解无效，事务不会工作
+
+```java
+    @Bean 
+    public PlatformTransactionManager transactionManager() {
+        return new DataSourceTransactionManager(dynamicDataSource());
+    }
+```
 
 
