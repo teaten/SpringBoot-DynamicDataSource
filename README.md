@@ -1,16 +1,15 @@
-# Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离 —— 通过 DAO 层方法名切换数据源
+# Spring Boot 中使用 MyBatis 下实现多数据源动态切换，读写分离 —— 多数据源轮循
 
-> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/aspect_dao)
+> 项目地址：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/roundrobin](https://github.com/helloworlde/SpringBoot-DynamicDataSource/tree/roundrobin)
 
 > 常见错误：[https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md](https://github.com/helloworlde/SpringBoot-DynamicDataSource/blob/master/Issues.md)
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
 
-> 在这个项目中使用注解方式声明要使用的数据源，通过 AOP 查找注解，从而实现数据源的动态切换；该项目为 Product
-实现其 REST API 的 CRUD为例，使用最小化的配置实现动态数据源切换
+> 该项目使用了一个可写数据源和多个只读数据源，为了减少数据库负载，使用轮循的方式选择只读数据源；考虑到在一个 Service 中同时会有读和写的操作，
+所以本应用使用 AOP 切面通过 DAO 层的方法名切换只读数据源
 
-> 需要注意的是，考虑到在一个 Service 中同时会有读和写的操作，所以本应用是通过 AOP 切 DAO 层实现数据源切换，但是当切向 DAO 层后不能开启
-事务，否则无法在 DAO 层切换数据源；如果切面切向 Service 层，不会和事务冲突
+> 需要注意的是，使用 DAO 层切面后不应该在 Service 类层面上加 `@Transactional` 注解，而应该添加在方法上，这也是 Spring 推荐的做法
 
 > 动态切换数据源依赖 `configuration` 包下的4个类来实现，分别是：
 > - DataSourceRoutingDataSource.java
@@ -22,8 +21,8 @@
 
 ## 创建数据库及表
 
-- 分别创建数据库`product_master` 和 `product_slave`
-- 在 `product_master` 和 `product_slave` 中分别创建表 `product`，并插入不同数据
+- 分别创建数据库`product_master`, `product_slave_alpha`, `product_slave_beta`, `product_slave_gamma`
+- 在以上数据库中分别创建表 `product`，并插入不同数据
 
 ```sql
     CREATE TABLE product_master.product(
@@ -31,16 +30,31 @@
       name VARCHAR(50) NOT NULL,
       price DOUBLE(10,2) NOT NULL DEFAULT 0
     );
-    
     INSERT INTO product_master.product (name, price) VALUES('master', '1');
     
-    CREATE TABLE product_slave.product(
+    
+    CREATE TABLE product_slave_alpha.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
       price DOUBLE(10,2) NOT NULL DEFAULT 0
     );
+    INSERT INTO product_slave_alpha.product (name, price) VALUES('slaveAlpha', '1');
     
-    INSERT INTO product_slave.product (name, price) VALUES('slave', '1');
+    
+    CREATE TABLE product_slave_beta.product(
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(50) NOT NULL,
+      price DOUBLE(10,2) NOT NULL DEFAULT 0
+    );
+    INSERT INTO product_slave_beta.product (name, price) VALUES('slaveBeta', '1');
+    
+    
+    CREATE TABLE product_slave_gamma.product(
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(50) NOT NULL,
+      price DOUBLE(10,2) NOT NULL DEFAULT 0
+    );
+    INSERT INTO product_slave_gamma.product (name, price) VALUES('slaveGamma', '1');
 ```
 
 ## 配置数据源
@@ -55,12 +69,26 @@ application.server.db.master.port=3306
 application.server.db.master.username=root
 application.server.db.master.password=123456
 
-# Slave datasource config
-application.server.db.slave.driver-class-name=com.mysql.jdbc.Driver
-application.server.db.slave.url=jdbc:mysql://localhost/product_slave?useSSL=false
-application.server.db.slave.port=3306
-application.server.db.slave.username=root
-application.server.db.slave.password=123456
+# SlaveAlpha datasource config
+application.server.db.slave-alpha.driver-class-name=com.mysql.jdbc.Driver
+application.server.db.slave-alpha.url=jdbc:mysql://localhost/product_slave_alpha?useSSL=false
+application.server.db.slave-alpha.port=3306
+application.server.db.slave-alpha.username=root
+application.server.db.slave-alpha.password=123456
+
+# SlaveBeta datasource config
+application.server.db.slave-beta.driver-class-name=com.mysql.jdbc.Driver
+application.server.db.slave-beta.url=jdbc:mysql://localhost/product_slave_beta?useSSL=false
+application.server.db.slave-beta.port=3306
+application.server.db.slave-beta.username=root
+application.server.db.slave-beta.password=123456
+
+# SlaveGamma datasource config
+application.server.db.slave-gamma.driver-class-name=com.mysql.jdbc.Driver
+application.server.db.slave-gamma.url=jdbc:mysql://localhost/product_slave_gamma?useSSL=false
+application.server.db.slave-gamma.port=3306
+application.server.db.slave-gamma.username=root
+application.server.db.slave-gamma.password=123456
 
 # MyBatis config
 mybatis.type-aliases-package=cn.com.hellowood.dynamicdatasource.mapper
@@ -68,6 +96,19 @@ mybatis.mapper-locations=mappers/**Mapper.xml
 ```
 
 ## 配置数据源
+
+- DataSourceKey.java
+```java
+package cn.com.hellowood.dynamicdatasource.common;
+
+public enum DataSourceKey {
+    master,
+    slaveAlpha,
+    slaveBeta,
+    slaveGamma
+}
+
+```
 
 - DataSourceRoutingDataSource.java
 
@@ -117,7 +158,7 @@ public class DataSourceConfigurer {
 
     /**
      * master DataSource
-     * @Primary 注解用于标识默认使用的 DataSource Bean，因为有三个 DataSource Bean，该注解可用于 master
+     * @Primary 注解用于标识默认使用的 DataSource Bean，因为有5个 DataSource Bean，该注解可用于 master
      * 或 slave DataSource Bean, 但不能用于 dynamicDataSource Bean, 否则会产生循环调用 
      * 
      * @ConfigurationProperties 注解用于从 application.properties 文件中读取配置，为 Bean 设置属性 
@@ -131,13 +172,35 @@ public class DataSourceConfigurer {
     }
 
     /**
-     * slave DataSource
+     * Slave alpha data source.
      *
-     * @return data source
+     * @return the data source
      */
-    @Bean("slave")
-    @ConfigurationProperties(prefix = "application.server.db.slave")
-    public DataSource slave() {
+    @Bean("slaveAlpha")
+    @ConfigurationProperties(prefix = "application.server.db.slave-alpha")
+    public DataSource slaveAlpha() {
+        return DataSourceBuilder.create().build();
+    }
+
+    /**
+     * Slave beta data source.
+     *
+     * @return the data source
+     */
+    @Bean("slaveBeta")
+    @ConfigurationProperties(prefix = "application.server.db.slave-beta")
+    public DataSource slaveBeta() {
+        return DataSourceBuilder.create().build();
+    }
+
+    /**
+     * Slave gamma data source.
+     *
+     * @return the data source
+     */
+    @Bean("slaveGamma")
+    @ConfigurationProperties(prefix = "application.server.db.slave-gamma")
+    public DataSource slaveGamma() {
         return DataSourceBuilder.create().build();
     }
 
@@ -149,9 +212,11 @@ public class DataSourceConfigurer {
     @Bean("dynamicDataSource")
     public DataSource dynamicDataSource() {
         DynamicRoutingDataSource dynamicRoutingDataSource = new DynamicRoutingDataSource();
-        Map<Object, Object> dataSourceMap = new HashMap<>(2);
-        dataSourceMap.put("master", master());
-        dataSourceMap.put("slave", slave());
+        Map<Object, Object> dataSourceMap = new HashMap<>(4);
+        dataSourceMap.put(DataSourceKey.master.name(), master());
+        dataSourceMap.put(DataSourceKey.slaveAlpha.name(), slaveAlpha());
+        dataSourceMap.put(DataSourceKey.slaveBeta.name(), slaveBeta());
+        dataSourceMap.put(DataSourceKey.slaveGamma.name(), slaveGamma());
 
         // 将 master 数据源作为默认指定的数据源
         dynamicRoutingDataSource.setDefaultTargetDataSource(master());
@@ -160,9 +225,13 @@ public class DataSourceConfigurer {
 
         // 将数据源的 key 放到数据源上下文的 key 集合中，用于切换时判断数据源是否有效
         DynamicDataSourceContextHolder.dataSourceKeys.addAll(dataSourceMap.keySet());
-        return dynamicRoutingDataSource;
-    }
 
+        // 将 Slave 数据源的 key 放在集合中，用于轮循
+        DynamicDataSourceContextHolder.slaveDataSourceKeys.addAll(dataSourceMap.keySet());
+        DynamicDataSourceContextHolder.slaveDataSourceKeys.remove(DataSourceKey.master.name());
+        return dynamicRoutingDataSource;
+    }   
+    
     /**
      * 配置 SqlSessionFactoryBean
      * @ConfigurationProperties 在这里是为了将 MyBatis 的 mapper 位置和持久层接口的别名设置到 
@@ -179,6 +248,14 @@ public class DataSourceConfigurer {
         return sqlSessionFactoryBean;
     }
     
+    /**
+     * 注入 DataSourceTransactionManager 用于事务管理
+     */
+    @Bean
+    public PlatformTransactionManager transactionManager() {
+        return new DataSourceTransactionManager(dynamicDataSource());
+    }
+    
 }
 
 ```
@@ -191,29 +268,44 @@ public class DataSourceConfigurer {
 package cn.com.hellowood.dynamicdatasource.configuration;
 
 
+import cn.com.hellowood.dynamicdatasource.common.DataSourceKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class DynamicDataSourceContextHolder {
+
+    private static final Logger logger = LoggerFactory.getLogger(DynamicDataSourceContextHolder.class);
+
+    /**
+     * 用于在切换数据源时保证不会被其他线程修改
+     */
+    private static Lock lock = new ReentrantLock();
+
+    /**
+     * 用于轮循的计数器
+     */
+    private static int counter = 0;
 
     /**
      * Maintain variable for every thread, to avoid effect other thread
      */
-    private static final ThreadLocal<String> contextHolder = new ThreadLocal<String>() {
-        
-        /**
-         * 将 master 数据源的 key 作为默认数据源的 key
-         */
-        @Override
-        protected String initialValue() {
-            return "master";
-        }
-    };
+    private static final ThreadLocal<String> CONTEXT_HOLDER = ThreadLocal.withInitial(DataSourceKey.master::name);
+
 
     /**
-     * 数据源的 key 集合，用于切换时判断数据源是否存在
+     * All DataSource List
      */
     public static List<Object> dataSourceKeys = new ArrayList<>();
+
+    /**
+     * The constant slaveDataSourceKeys.
+     */
+    public static List<Object> slaveDataSourceKeys = new ArrayList<>();
 
     /**
      * To switch DataSource
@@ -221,7 +313,33 @@ public class DynamicDataSourceContextHolder {
      * @param key the key
      */
     public static void setDataSourceKey(String key) {
-        contextHolder.set(key);
+        CONTEXT_HOLDER.set(key);
+    }
+
+    /**
+     * Use master data source.
+     */
+    public static void useMasterDataSource() {
+        CONTEXT_HOLDER.set(DataSourceKey.master.name());
+    }
+
+    /**
+     * 当使用只读数据源时通过轮循方式选择要使用的数据源
+     */
+    public static void useSlaveDataSource() {
+        lock.lock();
+
+        try {
+            int datasourceKeyIndex = counter % slaveDataSourceKeys.size();
+            CONTEXT_HOLDER.set(String.valueOf(slaveDataSourceKeys.get(datasourceKeyIndex)));
+            counter++;
+        } catch (Exception e) {
+            logger.error("Switch slave datasource failed, error message is {}", e.getMessage());
+            useMasterDataSource();
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -230,14 +348,14 @@ public class DynamicDataSourceContextHolder {
      * @return data source key
      */
     public static String getDataSourceKey() {
-        return contextHolder.get();
+        return CONTEXT_HOLDER.get();
     }
 
     /**
      * To set DataSource as default
      */
     public static void clearDataSourceKey() {
-        contextHolder.remove();
+        CONTEXT_HOLDER.remove();
     }
 
     /**
@@ -250,6 +368,7 @@ public class DynamicDataSourceContextHolder {
         return dataSourceKeys.contains(key);
     }
 }
+
 
 ```
 
@@ -284,7 +403,7 @@ public class DynamicDataSourceAspect {
     public void switchDataSource(JoinPoint point) {
         Boolean isQueryMethod = isQueryMethod(point.getSignature().getName());
         if (isQueryMethod) {
-            DynamicDataSourceContextHolder.setDataSourceKey("slave");
+            DynamicDataSourceContextHolder.useSlaveDataSource();
             logger.info("Switch DataSource to [{}] in Method [{}]",
                     DynamicDataSourceContextHolder.getDataSourceKey(), point.getSignature());
         }
@@ -348,6 +467,49 @@ public class ProduceController {
 ```
 
 - ProductService.java
+```java
+package cn.com.hellowood.dynamicdatasource.service;
+
+import cn.com.hellowood.dynamicdatasource.mapper.ProductDao;
+import cn.com.hellowood.dynamicdatasource.modal.Product;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+
+@Service
+public class ProductService {
+
+    @Autowired
+    private ProductDao productDao;
+
+    public Product select(long productId) throws Exception {
+        Product product = productDao.select(productId);
+        if (product == null) {
+            throw new Exception("Product:" + productId + " not found");
+        }
+        return product;
+    }
+
+    @Transactional(rollbackFor = DataAccessException.class)
+    public boolean add(Product newProduct) throws Exception {
+        Integer num = productDao.insert(newProduct);
+        if (num <= 0) {
+            throw new Exception("Add product failed");
+        }
+        return true;
+    }
+
+    public List<Product> getAllProduct() {
+        return productDao.getAllProduct();
+    }
+}
+
+```
+
+- ProductDao.java
 
 ```java
 package cn.com.hellowood.dynamicdatasource.mapper;
@@ -361,6 +523,8 @@ import java.util.List;
 @Mapper
 public interface ProductDao {
     Product select(@Param("id") long id);
+    
+    Integer insert(Product product);
 
     List<Product> getAllProduct();
 }
@@ -370,13 +534,12 @@ public interface ProductDao {
 - ProductMapper.xml
 
 > 启动项目，此时访问 `/product/1` 会返回 `product_master` 数据库中 `product` 表中的所有数据，
-访问 `/product` 会返回 `product_slave` 数据库中 `product` 表中的数据，同时也可以在看到切换
-数据源的 log，说明动态切换数据源是有效的
+多次访问 `/product` 会分别返回 `product_slave_alpha`、`product_slave_beta`、`product_slave_gamma` 数据库中 
+`product` 表中的数据，同时也可以在看到切换数据源的 log，说明动态切换数据源是有效的
 
 ---------------
 
 ## 注意
 
-> 在该应用中因为使用了 DAO 层的切面切换数据源，所以不能注入 `DataSourceTransactionManager` 的 Bean ，
-否则会在 Service 层开启事务，导致数据库操作执行完之后才会执行切面，从而无法切换数据源，同时事务不会生效，
-如果切面切向 Service 层，则可以注入 `DataSourceTransactionManager`, 事务正常生效
+> 在该应用中因为使用了 DAO 层的切面切换数据源，所以 `@Transactional` 注解不能加在类上，只能用于方法；有 `@Trasactional`
+注解的方法无法切换数据源
