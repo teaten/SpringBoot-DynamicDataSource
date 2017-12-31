@@ -6,11 +6,9 @@
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
 
-> 在这个项目中使用注解方式声明要使用的数据源，通过 AOP 查找注解，从而实现数据源的动态切换；该项目为 Product
-实现其 REST API 的 CRUD为例，使用最小化的配置实现动态数据源切换
+> 在这个项目中使用注解方式声明要使用的数据源，通过 AOP 查找注解，从而实现数据源的动态切换；该项目为 Product实现其 REST API 的 CRUD为例，使用最小化的配置实现动态数据源切换
 
-> 需要注意的是，考虑到在一个 Service 中同时会有读和写的操作，所以本应用是通过 AOP 切 DAO 层实现数据源切换，但是当切向 DAO 层后不能开启
-事务，否则无法在 DAO 层切换数据源；如果切面切向 Service 层，不会和事务冲突
+> 需要注意的是，考虑到在一个 Service 中同时会有读和写的操作，所以本应用是通过 AOP 切 DAO 层实现数据源切换，但是当切向 DAO 层后不能开启事务，否则无法在 DAO 层切换数据源；如果切面切向 Service 层，不会和事务冲突
 
 > 动态切换数据源依赖 `configuration` 包下的4个类来实现，分别是：
 > - DataSourceRoutingDataSource.java
@@ -26,6 +24,7 @@
 - 在 `product_master` 和 `product_slave` 中分别创建表 `product`，并插入不同数据
 
 ```sql
+    CREATE DATABASE IF NOT EXISTS product_master;
     CREATE TABLE product_master.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
@@ -34,6 +33,7 @@
     
     INSERT INTO product_master.product (name, price) VALUES('master', '1');
     
+    CREATE DATABASE IF NOT EXISTS product_slave;
     CREATE TABLE product_slave.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
@@ -71,8 +71,7 @@ mybatis.mapper-locations=mappers/**Mapper.xml
 
 - DataSourceRoutingDataSource.java
 
-> 该类继承自 `AbstractRoutingDataSource` 类，在访问数据库时会调用该类的 `determineCurrentLookupKey()` 
-方法获取数据库实例的 key
+> 该类继承自 `AbstractRoutingDataSource` 类，在访问数据库时会调用该类的 `determineCurrentLookupKey()` 方法获取数据库实例的 key
 
 ```java
 package cn.com.hellowood.dynamicdatasource.configuration;
@@ -369,14 +368,10 @@ public interface ProductDao {
 
 - ProductMapper.xml
 
-> 启动项目，此时访问 `/product/1` 会返回 `product_master` 数据库中 `product` 表中的所有数据，
-访问 `/product` 会返回 `product_slave` 数据库中 `product` 表中的数据，同时也可以在看到切换
-数据源的 log，说明动态切换数据源是有效的
+> 启动项目，此时访问 `/product/1` 会返回 `product_master` 数据库中 `product` 表中的所有数据，访问 `/product` 会返回 `product_slave` 数据库中 `product` 表中的数据，同时也可以在看到切换数据源的 log，说明动态切换数据源是有效的
 
 ---------------
 
 ## 注意
 
-> 在该应用中因为使用了 DAO 层的切面切换数据源，所以不能注入 `DataSourceTransactionManager` 的 Bean ，
-否则会在 Service 层开启事务，导致数据库操作执行完之后才会执行切面，从而无法切换数据源，同时事务不会生效，
-如果切面切向 Service 层，则可以注入 `DataSourceTransactionManager`, 事务正常生效
+> 在该应用中因为使用了 DAO 层的切面切换数据源，所以 @Transactional 注解不能加在类上，只能用于方法；有 @Trasactional注解的方法无法切换数据源
