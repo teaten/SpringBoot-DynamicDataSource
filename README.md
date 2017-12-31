@@ -6,8 +6,7 @@
 
 > 在 Spring Boot 应用中使用到了 MyBatis 作为持久层框架，添加多个数据源，实现读写分离，减少数据库的压力
 
-> 该项目使用了一个可写数据源和多个只读数据源，为了减少数据库负载，使用轮循的方式选择只读数据源；考虑到在一个 Service 中同时会有读和写的操作，
-所以本应用使用 AOP 切面通过 DAO 层的方法名切换只读数据源
+> 该项目使用了一个可写数据源和多个只读数据源，为了减少数据库负载，使用轮循的方式选择只读数据源；考虑到在一个 Service 中同时会有读和写的操作，所以本应用使用 AOP 切面通过 DAO 层的方法名切换只读数据源
 
 > 需要注意的是，使用 DAO 层切面后不应该在 Service 类层面上加 `@Transactional` 注解，而应该添加在方法上，这也是 Spring 推荐的做法
 
@@ -25,6 +24,7 @@
 - 在以上数据库中分别创建表 `product`，并插入不同数据
 
 ```sql
+    CREATE DATABASE IF NOT EXISTS product_master;
     CREATE TABLE product_master.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
@@ -32,7 +32,7 @@
     );
     INSERT INTO product_master.product (name, price) VALUES('master', '1');
     
-    
+    CREATE DATABASE IF NOT EXISTS product_slave_alpha;
     CREATE TABLE product_slave_alpha.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
@@ -40,7 +40,7 @@
     );
     INSERT INTO product_slave_alpha.product (name, price) VALUES('slaveAlpha', '1');
     
-    
+    CREATE DATABASE IF NOT EXISTS product_slave_beta;    
     CREATE TABLE product_slave_beta.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
@@ -48,7 +48,7 @@
     );
     INSERT INTO product_slave_beta.product (name, price) VALUES('slaveBeta', '1');
     
-    
+    CREATE DATABASE IF NOT EXISTS product_slave_gamma;    
     CREATE TABLE product_slave_gamma.product(
       id INT PRIMARY KEY AUTO_INCREMENT,
       name VARCHAR(50) NOT NULL,
