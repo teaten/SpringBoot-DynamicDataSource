@@ -1,0 +1,52 @@
+{
+  "hints": [],
+  "groups": [
+    {
+      "sourceType": "cn.com.hellowood.dynamicdatasource.configuration.DataSourceConfigurer",
+      "name": "mybatis",
+      "sourceMethod": "public org.mybatis.spring.SqlSessionFactoryBean sqlSessionFactoryBean() ",
+      "type": "org.mybatis.spring.SqlSessionFactoryBean"
+    },
+    {
+      "sourceType": "cn.com.hellowood.dynamicdatasource.configuration.DataSourceConfigurer",
+      "name": "spring.datasource.druid.master",
+      "sourceMethod": "public javax.sql.DataSource master() ",
+      "type": "javax.sql.DataSource"
+    },
+    {
+      "sourceType": "cn.com.hellowood.dynamicdatasource.configuration.DataSourceConfigurer",
+      "name": "spring.datasource.druid.slave-alpha",
+      "sourceMethod": "public javax.sql.DataSource slaveAlpha() ",
+      "type": "javax.sql.DataSource"
+    },
+    {
+      "sourceType": "cn.com.hellowood.dynamicdatasource.configuration.DataSourceConfigurer",
+      "name": "spring.datasource.druid.slave-beta",
+      "sourceMethod": "public javax.sql.DataSource slaveBeta() ",
+      "type": "javax.sql.DataSource"
+    },
+    {
+      "sourceType": "cn.com.hellowood.dynamicdatasource.configuration.DataSourceConfigurer",
+      "name": "spring.datasource.druid.slave-gamma",
+      "sourceMethod": "public javax.sql.DataSource slaveGamma() ",
+      "type": "javax.sql.DataSource"
+    }
+  ],
+  "properties": [
+    {
+      "sourceType": "org.mybatis.spring.SqlSessionFactoryBean",
+      "name": "mybatis.cache",
+      "type": "org.apache.ibatis.cache.Cache"
+    },
+    {
+      "sourceType": "org.mybatis.spring.SqlSessionFactoryBean",
+      "name": "mybatis.database-id-provider",
+      "type": "org.apache.ibatis.mapping.DatabaseIdProvider"
+    },
+    {
+      "sourceType": "org.mybatis.spring.SqlSessionFactoryBean",
+      "name": "mybatis.vfs",
+      "type": "java.lang.Class<? extends org.apache.ibatis.io.VFS>"
+    }
+  ]
+}
